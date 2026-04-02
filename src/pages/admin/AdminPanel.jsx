@@ -27,6 +27,7 @@ const AdminPanel = () => {
   const [editingGroup, setEditingGroup] = useState(null);
   const [editingStudent, setEditingStudent] = useState(null);
   const [editingCompany, setEditingCompany] = useState(null);
+  const [editingAccount, setEditingAccount] = useState(null);
 
   useEffect(() => {
     fetchAll();
@@ -216,6 +217,21 @@ const AdminPanel = () => {
     fetchAll();
   };
 
+  const handleUpdateAccount = async (id) => {
+    const upd = {
+      login: editingAccount.login,
+      role: editingAccount.role,
+    };
+    if (editingAccount.newPassword && editingAccount.newPassword.trim()) {
+      upd.password_hash = editingAccount.newPassword.trim();
+    }
+    const { error } = await supabase.from('accounts').update(upd).eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Аккаунт обновлён!');
+    setEditingAccount(null);
+    fetchAll();
+  };
+
   const handleDeleteAccount = async (id) => {
     if (!confirm('Удалить аккаунт?')) return;
     const { error } = await supabase.from('accounts').delete().eq('id', id);
@@ -293,28 +309,79 @@ const AdminPanel = () => {
 
   return (
     <div style={{ minHeight: '100vh', background: '#0a0b0f', color: '#f1f3f9' }}>
+      <style>{`
+        .adm-navbar {
+          background: rgba(10,11,15,0.9);
+          backdrop-filter: blur(20px);
+          -webkit-backdrop-filter: blur(20px);
+          border-bottom: 1px solid #1e2130;
+          padding: 0.75rem 1rem;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          position: sticky;
+          top: 0;
+          z-index: 100;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .adm-tabs {
+          display: flex;
+          gap: 6px;
+          margin-bottom: 1.25rem;
+          overflow-x: auto;
+          padding-bottom: 4px;
+          -webkit-overflow-scrolling: touch;
+          scrollbar-width: none;
+        }
+        .adm-tabs::-webkit-scrollbar { display: none; }
+        .adm-tab-btn {
+          background: #16181f;
+          color: #8892b0;
+          border: 1px solid #1e2130;
+          padding: 9px 14px;
+          border-radius: 10px;
+          cursor: pointer;
+          font-weight: 600;
+          font-size: 0.82rem;
+          white-space: nowrap;
+          transition: all 0.2s;
+          flex-shrink: 0;
+        }
+        .adm-tab-btn.active {
+          background: rgba(79,110,247,0.15);
+          color: #4f6ef7;
+          border-color: rgba(79,110,247,0.3);
+        }
+        .adm-form-row {
+          display: flex;
+          gap: 10px;
+        }
+        .adm-main { max-width: 1100px; margin: 0 auto; padding: 1.25rem 1rem; }
+        @media (max-width: 600px) {
+          .adm-main { padding: 1rem 0.75rem; }
+          .adm-form-row { flex-direction: column; gap: 8px; }
+          .adm-form-row > * { flex: unset !important; width: 100%; }
+        }
+      `}</style>
       {/* Навбар */}
-      <div style={{
-        background: 'rgba(10,11,15,0.9)', backdropFilter: 'blur(20px)',
-        borderBottom: '1px solid #1e2130', padding: '1rem 1.5rem',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        position: 'sticky', top: 0, zIndex: 100
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+      <div className="adm-navbar">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <button
             onClick={() => navigate('/teacher/groups')}
             style={{
               background: '#1c1f28', color: '#f1f3f9', border: '1px solid #1e2130',
-              padding: '8px 14px', borderRadius: '10px', cursor: 'pointer',
-              fontWeight: 600, fontSize: '0.85rem'
+              padding: '7px 12px', borderRadius: '10px', cursor: 'pointer',
+              fontWeight: 600, fontSize: '0.82rem', whiteSpace: 'nowrap'
             }}
           >
             ← Назад
           </button>
           <h1 style={{
-            margin: 0, fontSize: '1.25rem', fontWeight: 700,
+            margin: 0, fontSize: '1.1rem', fontWeight: 700,
             background: 'linear-gradient(135deg, #4f6ef7, #7c3aed)',
-            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent'
+            WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
+            whiteSpace: 'nowrap'
           }}>Админ-панель</h1>
         </div>
       </div>
@@ -334,24 +401,14 @@ const AdminPanel = () => {
         </div>
       )}
 
-      <div style={{ maxWidth: '1100px', margin: '0 auto', padding: '1.5rem' }}>
+      <div className="adm-main">
         {/* Табы */}
-        <div style={{
-          display: 'flex', gap: '8px', marginBottom: '1.5rem',
-          overflowX: 'auto', paddingBottom: '4px'
-        }}>
+        <div className="adm-tabs">
           {tabs.map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              style={{
-                background: activeTab === tab.id ? 'rgba(79,110,247,0.15)' : '#16181f',
-                color: activeTab === tab.id ? '#4f6ef7' : '#8892b0',
-                border: `1px solid ${activeTab === tab.id ? 'rgba(79,110,247,0.3)' : '#1e2130'}`,
-                padding: '10px 18px', borderRadius: '10px', cursor: 'pointer',
-                fontWeight: 600, fontSize: '0.85rem', whiteSpace: 'nowrap',
-                transition: 'all 0.2s'
-              }}
+              className={`adm-tab-btn${activeTab === tab.id ? ' active' : ''}`}
             >
               {tab.icon} {tab.label}
             </button>
@@ -424,7 +481,7 @@ const AdminPanel = () => {
               <form onSubmit={handleCreateStudent} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
                 <input placeholder="ФИО" value={studentForm.name}
                   onChange={e => setStudentForm({ ...studentForm, name: e.target.value })} style={inputStyle} />
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="adm-form-row">
                   <input placeholder="Логин" value={studentForm.login}
                     onChange={e => setStudentForm({ ...studentForm, login: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
                   <input placeholder="Пароль" value={studentForm.password}
@@ -647,7 +704,7 @@ const AdminPanel = () => {
                 Для студентов аккаунт создаётся автоматом при добавлении. Здесь можно создать аккаунт преподавателя или руководителя.
               </p>
               <form onSubmit={handleCreateAccount} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <div style={{ display: 'flex', gap: '10px' }}>
+                <div className="adm-form-row">
                   <input placeholder="Логин" value={accountForm.login}
                     onChange={e => setAccountForm({ ...accountForm, login: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
                   <input placeholder="Пароль" value={accountForm.password}
@@ -676,23 +733,48 @@ const AdminPanel = () => {
               {accounts.length === 0 ? (
                 <p style={{ color: '#4a5568' }}>Аккаунтов пока нет</p>
               ) : (
-                <div style={{ overflowX: 'auto' }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        <th style={thStyle}>Логин</th>
-                        <th style={thStyle}>Роль</th>
-                        <th style={thStyle}>Создан</th>
-                        <th style={thStyle}>Действия</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {accounts.map(a => (
-                        <tr key={a.id} style={{ borderBottom: '1px solid #1e2130' }}>
-                          <td style={tdStyle}><span style={{ fontWeight: 600 }}>{a.login}</span></td>
-                          <td style={tdStyle}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {accounts.map(a => (
+                    <div key={a.id} style={{
+                      background: '#111318', padding: '14px 16px', borderRadius: '12px',
+                      border: '1px solid #1e2130'
+                    }}>
+                      {editingAccount && editingAccount.id === a.id ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                          <input
+                            value={editingAccount.login}
+                            onChange={e => setEditingAccount({ ...editingAccount, login: e.target.value })}
+                            placeholder="Логин"
+                            style={inputStyle}
+                          />
+                          <input
+                            value={editingAccount.newPassword || ''}
+                            onChange={e => setEditingAccount({ ...editingAccount, newPassword: e.target.value })}
+                            placeholder="Новый пароль (оставьте пустым, чтобы не менять)"
+                            type="password"
+                            style={inputStyle}
+                          />
+                          <select
+                            value={editingAccount.role}
+                            onChange={e => setEditingAccount({ ...editingAccount, role: e.target.value })}
+                            style={selectStyle}
+                          >
+                            <option value="teacher">Преподаватель</option>
+                            <option value="company">Руководитель (предприятие)</option>
+                            <option value="admin">Админ</option>
+                            <option value="student">Студент</option>
+                          </select>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => handleUpdateAccount(a.id)} style={btnSave}>💾 Сохранить</button>
+                            <button onClick={() => setEditingAccount(null)} style={btnEdit}>Отмена</button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '8px' }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                            <span style={{ fontWeight: 700 }}>{a.login}</span>
                             <span style={{
-                              padding: '3px 8px', borderRadius: '100px', fontSize: '0.75rem', fontWeight: 600,
+                              padding: '3px 8px', borderRadius: '100px', fontSize: '0.72rem', fontWeight: 600,
                               background: a.role === 'admin' ? 'rgba(239,68,68,0.1)' :
                                          a.role === 'teacher' ? 'rgba(16,185,129,0.1)' :
                                          a.role === 'company' ? 'rgba(124,58,237,0.1)' : 'rgba(79,110,247,0.1)',
@@ -705,19 +787,18 @@ const AdminPanel = () => {
                                 a.role === 'company' ? 'rgba(124,58,237,0.2)' : 'rgba(79,110,247,0.2)'
                               }`
                             }}>{a.role}</span>
-                          </td>
-                          <td style={tdStyle}>
-                            <span style={{ color: '#8892b0', fontSize: '0.85rem' }}>
+                            <span style={{ color: '#4a5568', fontSize: '0.78rem' }}>
                               {new Date(a.created_at).toLocaleDateString('ru-RU')}
                             </span>
-                          </td>
-                          <td style={tdStyle}>
+                          </div>
+                          <div style={{ display: 'flex', gap: '6px' }}>
+                            <button onClick={() => setEditingAccount({ ...a, newPassword: '' })} style={btnEdit}>✏️</button>
                             <button onClick={() => handleDeleteAccount(a.id)} style={btnDanger}>🗑️</button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
                 </div>
               )}
             </div>

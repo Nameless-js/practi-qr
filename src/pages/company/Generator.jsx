@@ -25,17 +25,41 @@ const Generator = () => {
     setError('');
 
     try {
-      // Получаем токен для этого предприятия
+      // Получаем последний токен для этого предприятия
       const { data, error: err } = await supabase
         .from('qr_tokens')
-        .select('token, companies(name)')
+        .select('id, token, expires_at, companies(name)')
         .eq('company_id', user.company_id)
         .order('created_at', { ascending: false })
         .limit(1)
         .single();
 
       if (err || !data) {
-        setError('QR-токен не найден. Обратитесь к администратору.');
+        // Токена нет — создаём новый
+        await createNewToken();
+        return;
+      }
+
+      // Токен истёк? Обновляем expires_at до конца сегодняшнего дня
+      const now = new Date();
+      const expiresAt = new Date(data.expires_at);
+
+      if (expiresAt < now) {
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+
+        const { error: updateErr } = await supabase
+          .from('qr_tokens')
+          .update({ expires_at: endOfToday.toISOString() })
+          .eq('id', data.id);
+
+        if (updateErr) {
+          await createNewToken();
+          return;
+        }
+        // Используем тот же токен (UUID не меняется, только дата)
+        setQrToken(data.token);
+        setCompanyName(data.companies?.name || user.login);
       } else {
         setQrToken(data.token);
         setCompanyName(data.companies?.name || user.login);
@@ -44,6 +68,34 @@ const Generator = () => {
       setError('Ошибка загрузки');
     }
 
+    setLoading(false);
+  };
+
+  const createNewToken = async () => {
+    try {
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      const newToken = crypto.randomUUID();
+
+      const { data: created, error: createErr } = await supabase
+        .from('qr_tokens')
+        .insert([{
+          token: newToken,
+          company_id: user.company_id,
+          expires_at: endOfToday.toISOString()
+        }])
+        .select('token, companies(name)')
+        .single();
+
+      if (createErr || !created) {
+        setError('Не удалось создать QR-токен. Обратитесь к администратору.');
+      } else {
+        setQrToken(created.token);
+        setCompanyName(created.companies?.name || user.login);
+      }
+    } catch {
+      setError('Ошибка создания токена');
+    }
     setLoading(false);
   };
 

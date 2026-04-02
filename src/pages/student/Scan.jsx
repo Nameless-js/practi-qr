@@ -124,15 +124,27 @@ const Scan = () => {
         return;
       }
 
-      // b) Проверяем не истёк ли токен
+      // b) Проверяем не истёк ли токен — если истёк, пробуем продлить автоматически
       if (new Date(qrData.expires_at) < new Date()) {
-        setScanResult({
-          success: false,
-          message: 'QR-код просрочен',
-          details: 'Этот QR-код уже истёк. Новый генерируется автоматически каждый день.'
-        });
-        setProcessing(false);
-        return;
+        const endOfToday = new Date();
+        endOfToday.setHours(23, 59, 59, 999);
+
+        const { error: renewErr } = await supabase
+          .from('qr_tokens')
+          .update({ expires_at: endOfToday.toISOString() })
+          .eq('id', qrData.id);
+
+        if (renewErr) {
+          // Не удалось продлить — показываем ошибку
+          setScanResult({
+            success: false,
+            message: 'QR-код просрочен',
+            details: 'Попросите руководителя обновить страницу с QR-кодом.'
+          });
+          setProcessing(false);
+          return;
+        }
+        // Продление прошло успешно — продолжаем с отметкой
       }
 
       const company = qrData.companies;
