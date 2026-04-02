@@ -80,10 +80,52 @@ const AdminPanel = () => {
   };
 
   const handleDeleteGroup = async (id) => {
-    if (!confirm('Удалить группу? Все студенты этой группы потеряют привязку.')) return;
+    if (!confirm(
+      'Удалить группу?\n\nВсе студенты этой группы, их посещаемость и аккаунты будут удалены безвозвратно.'
+    )) return;
+
+    // 1. Найти всех студентов группы
+    const { data: groupStudents } = await supabase
+      .from('students')
+      .select('id')
+      .eq('group_id', id);
+
+    const studentIds = (groupStudents || []).map(s => s.id);
+
+    if (studentIds.length > 0) {
+      // 2. Удалить посещаемость студентов
+      const { error: att409 } = await supabase
+        .from('attendance')
+        .delete()
+        .in('student_id', studentIds);
+      if (att409) { showMsg('Ошибка удаления посещаемости: ' + att409.message, 'error'); return; }
+
+      // 3. Удалить связки студент-предприятие
+      const { error: asgn409 } = await supabase
+        .from('student_assignments')
+        .delete()
+        .in('student_id', studentIds);
+      if (asgn409) { showMsg('Ошибка удаления связок: ' + asgn409.message, 'error'); return; }
+
+      // 4. Удалить аккаунты студентов
+      const { error: acc409 } = await supabase
+        .from('accounts')
+        .delete()
+        .in('student_id', studentIds);
+      if (acc409) { showMsg('Ошибка удаления аккаунтов: ' + acc409.message, 'error'); return; }
+
+      // 5. Удалить самих студентов
+      const { error: std409 } = await supabase
+        .from('students')
+        .delete()
+        .in('id', studentIds);
+      if (std409) { showMsg('Ошибка удаления студентов: ' + std409.message, 'error'); return; }
+    }
+
+    // 6. Удалить группу
     const { error } = await supabase.from('groups').delete().eq('id', id);
     if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
-    showMsg('Группа удалена');
+    showMsg(`Группа удалена вместе с ${studentIds.length} студентами`);
     fetchAll();
   };
 
@@ -131,11 +173,24 @@ const AdminPanel = () => {
   };
 
   const handleDeleteStudent = async (id) => {
-    if (!confirm('Удалить студента? Все его данные будут потеряны.')) return;
-    // Удаляем аккаунт тоже
-    await supabase.from('accounts').delete().eq('student_id', id);
-    const { error } = await supabase.from('students').delete().eq('id', id);
-    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    if (!confirm('Удалить студента? Посещаемость, аккаунт и связки с предприятиями будут удалены.')) return;
+
+    // 1. Удалить посещаемость
+    const { error: e1 } = await supabase.from('attendance').delete().eq('student_id', id);
+    if (e1) { showMsg('Ошибка удаления посещаемости: ' + e1.message, 'error'); return; }
+
+    // 2. Удалить связки студент-предприятие
+    const { error: e2 } = await supabase.from('student_assignments').delete().eq('student_id', id);
+    if (e2) { showMsg('Ошибка удаления связок: ' + e2.message, 'error'); return; }
+
+    // 3. Удалить аккаунт
+    const { error: e3 } = await supabase.from('accounts').delete().eq('student_id', id);
+    if (e3) { showMsg('Ошибка удаления аккаунта: ' + e3.message, 'error'); return; }
+
+    // 4. Удалить студента
+    const { error: e4 } = await supabase.from('students').delete().eq('id', id);
+    if (e4) { showMsg('Ошибка: ' + e4.message, 'error'); return; }
+
     showMsg('Студент удалён');
     fetchAll();
   };
