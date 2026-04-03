@@ -7,6 +7,8 @@ import 'leaflet/dist/leaflet.css';
 import Generator from './pages/company/Generator';
 import Groups from './pages/teacher/Groups';
 import Attendance from './pages/teacher/Attendance';
+import NormalSubjects from './pages/teacher/NormalSubjects';
+import NormalAttendance from './pages/teacher/NormalAttendance';
 import AdminPanel from './pages/admin/AdminPanel';
 
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -45,6 +47,18 @@ function App() {
         <Route path="/teacher/attendance/:groupId" element={
           <ProtectedRoute allowedRoles={['teacher', 'admin']}>
             <Attendance />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/teacher/normal-subjects/:groupId" element={
+          <ProtectedRoute allowedRoles={['teacher', 'admin']}>
+            <NormalSubjects />
+          </ProtectedRoute>
+        } />
+
+        <Route path="/teacher/normal-attendance/:groupId/:subjectId" element={
+          <ProtectedRoute allowedRoles={['teacher', 'admin']}>
+            <NormalAttendance />
           </ProtectedRoute>
         } />
 

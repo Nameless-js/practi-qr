@@ -5,6 +5,7 @@ import { supabase } from '../../api/supabaseClient';
 const Groups = () => {
   const [groups, setGroups] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedGroup, setSelectedGroup] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -181,7 +182,7 @@ const Groups = () => {
             {groups.map(group => (
               <div
                 key={group.id}
-                onClick={() => navigate(`/teacher/attendance/${group.id}`)}
+                onClick={() => setSelectedGroup(group)}
                 style={{
                   background: '#16181f', border: '1px solid #1e2130',
                   borderRadius: '16px', padding: '1.5rem',
@@ -212,6 +213,57 @@ const Groups = () => {
           </div>
         )}
       </div>
+
+      {/* Модальное окно выбора типа практики */}
+      {selectedGroup && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }} onClick={() => setSelectedGroup(null)}>
+          <div style={{
+            background: '#16181f', padding: '2rem', borderRadius: '16px',
+            border: '1px solid #1e2130', width: '90%', maxWidth: '400px',
+            textAlign: 'center'
+          }} onClick={e => e.stopPropagation()}>
+            <h3 style={{ margin: '0 0 1.5rem 0', fontSize: '1.3rem', color: '#f1f3f9' }}>
+              Выберите тип практики
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button
+                onClick={() => navigate(`/teacher/attendance/${selectedGroup.id}`)}
+                style={{
+                  background: 'linear-gradient(135deg, #4f6ef7, #7c3aed)',
+                  color: 'white', border: 'none', padding: '14px', borderRadius: '12px',
+                  cursor: 'pointer', fontWeight: 600, fontSize: '1rem'
+                }}
+              >
+                Производственная практика
+              </button>
+              <button
+                onClick={() => navigate(`/teacher/normal-subjects/${selectedGroup.id}`)}
+                style={{
+                  background: 'rgba(79,110,247,0.1)',
+                  color: '#4f6ef7', border: '1px solid rgba(79,110,247,0.3)',
+                  padding: '14px', borderRadius: '12px',
+                  cursor: 'pointer', fontWeight: 600, fontSize: '1rem'
+                }}
+              >
+                Обычная практика
+              </button>
+            </div>
+            <button
+              onClick={() => setSelectedGroup(null)}
+              style={{
+                marginTop: '1.5rem', background: 'transparent', color: '#8892b0',
+                border: 'none', cursor: 'pointer', fontSize: '0.9rem'
+              }}
+            >
+              Отмена
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

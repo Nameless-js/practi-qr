@@ -13,6 +13,9 @@ const AdminPanel = () => {
   const [companies, setCompanies] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [subjects, setSubjects] = useState([]);
+  const [groupSubjects, setGroupSubjects] = useState([]);
+  const [normalAttendance, setNormalAttendance] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ text: '', type: '' });
 
@@ -22,12 +25,17 @@ const AdminPanel = () => {
   const [companyForm, setCompanyForm] = useState({ name: '', address: '', latitude: '', longitude: '', allowed_radius: '200' });
   const [accountForm, setAccountForm] = useState({ login: '', password: '', role: 'teacher', company_id: '', student_id: '' });
   const [assignForm, setAssignForm] = useState({ student_id: '', company_id: '' });
+  const [subjectForm, setSubjectForm] = useState({ name: '' });
+  const [groupSubjectForm, setGroupSubjectForm] = useState({ group_id: '', subject_id: '' });
+  const [normalAttForm, setNormalAttForm] = useState({ student_id: '', subject_id: '', date: new Date().toISOString().split('T')[0], status: 'present' });
 
   // === EDIT MODE ===
   const [editingGroup, setEditingGroup] = useState(null);
   const [editingStudent, setEditingStudent] = useState(null);
   const [editingCompany, setEditingCompany] = useState(null);
   const [editingAccount, setEditingAccount] = useState(null);
+  const [editingSubject, setEditingSubject] = useState(null);
+  const [editingNormalAtt, setEditingNormalAtt] = useState(null);
 
   useEffect(() => {
     fetchAll();
@@ -35,16 +43,22 @@ const AdminPanel = () => {
 
   const fetchAll = async () => {
     setLoading(true);
-    const [g, s, c, a] = await Promise.all([
+    const [g, s, c, a, sub, gs, na] = await Promise.all([
       supabase.from('groups').select('*').order('name'),
       supabase.from('students').select('*, groups(name)').order('name'),
       supabase.from('companies').select('*').order('name'),
       supabase.from('accounts').select('*').order('created_at', { ascending: false }),
+      supabase.from('subjects').select('*').order('name'),
+      supabase.from('group_subjects').select('*, groups(name), subjects(name)'),
+      supabase.from('normal_attendance').select('*, students(name), subjects(name)').order('date', { ascending: false })
     ]);
     setGroups(g.data || []);
     setStudents(s.data || []);
     setCompanies(c.data || []);
     setAccounts(a.data || []);
+    setSubjects(sub.data || []);
+    setGroupSubjects(gs.data || []);
+    setNormalAttendance(na.data || []);
 
     // Загружаем связки студент-предприятие
     const { data: assignData } = await supabase
@@ -316,6 +330,97 @@ const AdminPanel = () => {
     fetchAll();
   };
 
+  // ===================== SUBJECTS =====================
+  const handleCreateSubject = async (e) => {
+    e.preventDefault();
+    if (!subjectForm.name.trim()) return;
+    const { error } = await supabase.from('subjects').insert([{ name: subjectForm.name.trim() }]);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Предмет создан!');
+    setSubjectForm({ name: '' });
+    fetchAll();
+  };
+
+  const handleUpdateSubject = async (id) => {
+    const { error } = await supabase.from('subjects').update({ name: editingSubject.name }).eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Предмет обновлен!');
+    setEditingSubject(null);
+    fetchAll();
+  };
+
+  const handleDeleteSubject = async (id) => {
+    if (!confirm('Удалить предмет? Привязки и посещаемость будут удалены.')) return;
+    const { error } = await supabase.from('subjects').delete().eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Предмет удален');
+    fetchAll();
+  };
+
+  // ===================== GROUP SUBJECTS =====================
+  const handleCreateGroupSubject = async (e) => {
+    e.preventDefault();
+    if (!groupSubjectForm.group_id || !groupSubjectForm.subject_id) return;
+    try {
+      const { error } = await supabase.from('group_subjects').insert([{
+        group_id: groupSubjectForm.group_id,
+        subject_id: groupSubjectForm.subject_id
+      }]);
+      if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+      showMsg('Предмет привязан к группе!');
+      setGroupSubjectForm({ ...groupSubjectForm, subject_id: '' });
+      fetchAll();
+    } catch(err) {
+      showMsg('Ошибка сервера', 'error');
+    }
+  };
+
+  const handleDeleteGroupSubject = async (id) => {
+    const { error } = await supabase.from('group_subjects').delete().eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Привязка удалена');
+    fetchAll();
+  };
+
+  // ===================== NORMAL ATTENDANCE =====================
+  const handleCreateNormalAtt = async (e) => {
+    e.preventDefault();
+    if (!normalAttForm.student_id || !normalAttForm.subject_id || !normalAttForm.date) return;
+    
+    // Попытаемся удалить существующую запись (чтобы обновить статус), если она есть.
+    await supabase.from('normal_attendance').delete()
+      .eq('student_id', normalAttForm.student_id)
+      .eq('subject_id', normalAttForm.subject_id)
+      .eq('date', normalAttForm.date);
+      
+    const { error } = await supabase.from('normal_attendance').insert([{
+      student_id: normalAttForm.student_id,
+      subject_id: normalAttForm.subject_id,
+      date: normalAttForm.date,
+      status: normalAttForm.status
+    }]);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Запись добавлена!');
+    // Сохраняем дату и предмет, сбрасываем только студента для быстрого ввода следующих
+    setNormalAttForm({ ...normalAttForm, student_id: '' });
+    fetchAll();
+  };
+
+  const handleUpdateNormalAtt = async (id) => {
+    const { error } = await supabase.from('normal_attendance').update({ status: editingNormalAtt.status }).eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Запись обновлена!');
+    setEditingNormalAtt(null);
+    fetchAll();
+  };
+
+  const handleDeleteNormalAtt = async (id) => {
+    const { error } = await supabase.from('normal_attendance').delete().eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Запись удалена');
+    fetchAll();
+  };
+
   // ===================== STYLES =====================
   const inputStyle = {
     background: '#111318', border: '1px solid #1e2130', borderRadius: '10px',
@@ -358,8 +463,11 @@ const AdminPanel = () => {
     { id: 'groups', icon: '📂', label: 'Группы' },
     { id: 'students', icon: '🎓', label: 'Студенты' },
     { id: 'companies', icon: '🏢', label: 'Предприятия' },
-    { id: 'assignments', icon: '🔗', label: 'Связки' },
+    { id: 'assignments', icon: '🔗', label: 'Связки Пр.' },
     { id: 'accounts', icon: '👤', label: 'Аккаунты' },
+    { id: 'subjects', icon: '📚', label: 'Предметы' },
+    { id: 'group_subjects', icon: '📎', label: 'Предм. Групп' },
+    { id: 'normal_attendance', icon: '📅', label: 'Лог (Обыч)' },
   ];
 
   return (
@@ -852,6 +960,196 @@ const AdminPanel = () => {
                           </div>
                         </div>
                       )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================== ПРЕДМЕТЫ ==================== */}
+        {activeTab === 'subjects' && (
+          <div>
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>➕ Добавить предмет</h3>
+              <form onSubmit={handleCreateSubject} style={{ display: 'flex', gap: '10px' }}>
+                <input
+                  placeholder="Название предмета"
+                  value={subjectForm.name}
+                  onChange={e => setSubjectForm({ name: e.target.value })}
+                  style={{ ...inputStyle, flex: 1 }}
+                />
+                <button type="submit" style={btnPrimary}>Создать</button>
+              </form>
+            </div>
+
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>📋 Предметы ({subjects.length})</h3>
+              {subjects.length === 0 ? (
+                <p style={{ color: '#4a5568' }}>Предметов пока нет</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {subjects.map(s => (
+                    <div key={s.id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: '#111318', padding: '12px 16px', borderRadius: '10px',
+                      border: '1px solid #1e2130'
+                    }}>
+                      {editingSubject && editingSubject.id === s.id ? (
+                        <input
+                          value={editingSubject.name}
+                          onChange={e => setEditingSubject({ ...editingSubject, name: e.target.value })}
+                          style={{ ...inputStyle, flex: 1, marginRight: '10px' }}
+                        />
+                      ) : (
+                        <span style={{ fontWeight: 600 }}>{s.name}</span>
+                      )}
+                      <div style={{ display: 'flex', gap: '6px' }}>
+                        {editingSubject && editingSubject.id === s.id ? (
+                          <>
+                            <button onClick={() => handleUpdateSubject(s.id)} style={btnSave}>💾 Сохранить</button>
+                            <button onClick={() => setEditingSubject(null)} style={btnEdit}>Отмена</button>
+                          </>
+                        ) : (
+                          <>
+                            <button onClick={() => setEditingSubject({ ...s })} style={btnEdit}>✏️</button>
+                            <button onClick={() => handleDeleteSubject(s.id)} style={btnDanger}>🗑️</button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================== ПРИВЯЗКА ПРЕДМЕТОВ К ГРУППАМ ==================== */}
+        {activeTab === 'group_subjects' && (
+          <div>
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>📎 Привязать предмет к группе</h3>
+              <form onSubmit={handleCreateGroupSubject} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <select value={groupSubjectForm.group_id}
+                  onChange={e => setGroupSubjectForm({ ...groupSubjectForm, group_id: e.target.value })} style={selectStyle}>
+                  <option value="">— Выберите группу —</option>
+                  {groups.map(g => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+                <select value={groupSubjectForm.subject_id}
+                  onChange={e => setGroupSubjectForm({ ...groupSubjectForm, subject_id: e.target.value })} style={selectStyle}>
+                  <option value="">— Выберите предмет —</option>
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+                <button type="submit" style={btnPrimary}>Привязать</button>
+              </form>
+            </div>
+
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>📋 Все привязки ({groupSubjects.length})</h3>
+              {groupSubjects.length === 0 ? (
+                <p style={{ color: '#4a5568' }}>Привязок пока нет</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {groupSubjects.map(gs => (
+                    <div key={gs.id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: '#111318', padding: '12px 16px', borderRadius: '10px',
+                      border: '1px solid #1e2130'
+                    }}>
+                      <span>
+                        <span style={{ fontWeight: 600 }}>{gs.groups?.name || 'Группа не найдена'}</span>
+                        <span style={{ color: '#4a5568', margin: '0 8px' }}>—</span>
+                        <span style={{ color: '#8892b0' }}>{gs.subjects?.name || 'Предмет не найден'}</span>
+                      </span>
+                      <button onClick={() => handleDeleteGroupSubject(gs.id)} style={btnDanger}>🗑️</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================== ЖУРНАЛ ПОСЕЩАЕМОСТИ (ОБЫЧНАЯ) ==================== */}
+        {activeTab === 'normal_attendance' && (
+          <div>
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>➕ Добавить отметку посещаемости</h3>
+              <form onSubmit={handleCreateNormalAtt} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input type="date" value={normalAttForm.date}
+                  onChange={e => setNormalAttForm({ ...normalAttForm, date: e.target.value })} style={inputStyle} />
+                  
+                <select value={normalAttForm.student_id}
+                  onChange={e => setNormalAttForm({ ...normalAttForm, student_id: e.target.value })} style={selectStyle}>
+                  <option value="">— Выберите студента —</option>
+                  {students.map(s => <option key={s.id} value={s.id}>{s.name} ({s.groups?.name || 'без группы'})</option>)}
+                </select>
+
+                <select value={normalAttForm.subject_id}
+                  onChange={e => setNormalAttForm({ ...normalAttForm, subject_id: e.target.value })} style={selectStyle}>
+                  <option value="">— Выберите предмет —</option>
+                  {subjects.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+
+                <select value={normalAttForm.status}
+                  onChange={e => setNormalAttForm({ ...normalAttForm, status: e.target.value })} style={selectStyle}>
+                  <option value="present">Присутствовал</option>
+                  <option value="absent">Отсутствовал</option>
+                </select>
+
+                <button type="submit" style={btnPrimary}>Добавить / Обновить</button>
+              </form>
+            </div>
+
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>📋 Журнал посещений ({normalAttendance.length})</h3>
+              {normalAttendance.length === 0 ? (
+                <p style={{ color: '#4a5568' }}>Записей пока нет</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {normalAttendance.map(na => (
+                    <div key={na.id} style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                      background: '#111318', padding: '12px 16px', borderRadius: '10px',
+                      border: '1px solid #1e2130', flexWrap: 'wrap', gap: '10px'
+                    }}>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <span style={{ fontWeight: 600 }}>{na.students?.name || 'Студент не найден'}</span>
+                        <span style={{ color: '#8892b0', fontSize: '0.85rem' }}>
+                          {na.subjects?.name || 'Предмет не найден'} | {new Date(na.date).toLocaleDateString('ru-RU')}
+                        </span>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {editingNormalAtt && editingNormalAtt.id === na.id ? (
+                          <>
+                            <select
+                              value={editingNormalAtt.status}
+                              onChange={e => setEditingNormalAtt({ ...editingNormalAtt, status: e.target.value })}
+                              style={{ ...selectStyle, width: 'auto', padding: '6px 10px' }}
+                            >
+                              <option value="present">Присутствовал</option>
+                              <option value="absent">Отсутствовал</option>
+                            </select>
+                            <button onClick={() => handleUpdateNormalAtt(na.id)} style={btnSave}>💾</button>
+                            <button onClick={() => setEditingNormalAtt(null)} style={btnEdit}>✕</button>
+                          </>
+                        ) : (
+                          <>
+                            <span style={{
+                              padding: '4px 10px', borderRadius: '100px', fontSize: '0.78rem', fontWeight: 600,
+                              background: na.status === 'present' ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                              color: na.status === 'present' ? '#10b981' : '#ef4444',
+                              border: `1px solid ${na.status === 'present' ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`
+                            }}>
+                              {na.status === 'present' ? 'Присутствовал' : 'Отсутствовал'}
+                            </span>
+                            <button onClick={() => setEditingNormalAtt({ ...na })} style={btnEdit}>✏️</button>
+                            <button onClick={() => handleDeleteNormalAtt(na.id)} style={btnDanger}>🗑️</button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>
