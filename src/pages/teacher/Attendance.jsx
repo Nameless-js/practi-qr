@@ -15,6 +15,11 @@ const Attendance = () => {
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const datePickerRef = useRef(null);
 
+  // Для модального окна истории
+  const [selectedStudent, setSelectedStudent] = useState(null);
+  const [studentHistory, setStudentHistory] = useState([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
   // Close date picker on outside click
   useEffect(() => {
     const handleOutsideClick = (e) => {
@@ -72,6 +77,20 @@ const Attendance = () => {
 
   const getAttendanceForStudent = (studentId) => {
     return attendance.find((a) => a.student_id === studentId);
+  };
+
+  const openStudentHistoryModal = async (student) => {
+    setSelectedStudent(student);
+    setHistoryLoading(true);
+    // Запрашиваем историю посещаемости за всё время
+    const { data } = await supabase
+      .from("attendance")
+      .select("*, companies(name, latitude, longitude)")
+      .eq("student_id", student.id)
+      .order("scanned_at", { ascending: false });
+    
+    setStudentHistory(data || []);
+    setHistoryLoading(false);
   };
 
   const openMaps = (studentLat, studentLng, companyLat, companyLng) => {
@@ -259,6 +278,32 @@ const Attendance = () => {
           text-align: center;
         }
 
+        /* Modal Styles */
+        .modal-overlay {
+          position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+          background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 1000; padding: 1rem;
+        }
+        .modal-content {
+          background: #16181f; border: 1px solid #1e2130;
+          border-radius: 16px; width: 100%; max-width: 600px;
+          max-height: 90vh; display: flex; flex-direction: column;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+        }
+        .modal-header {
+          padding: 1.5rem; border-bottom: 1px solid #1e2130;
+          display: flex; justify-content: space-between; align-items: flex-start;
+        }
+        .modal-body {
+          padding: 1.5rem; overflow-y: auto;
+        }
+        .history-item {
+          display: flex; justify-content: space-between; align-items: center;
+          padding: 12px 16px; background: #111318; border: 1px solid #1e2130;
+          border-radius: 10px; margin-bottom: 8px; flex-wrap: wrap; gap: 10px;
+        }
+
         /* Таблица — desktop */
         .att-table-wrapper {
           background: #16181f;
@@ -431,8 +476,16 @@ const Attendance = () => {
                   {students.map((student) => {
                     const att = getAttendanceForStudent(student.id);
                     return (
-                      <tr key={student.id}>
-                        <td><div style={{ fontWeight: 600 }}>{student.name}</div></td>
+                      <tr 
+                        key={student.id} 
+                        onClick={() => openStudentHistoryModal(student)}
+                        style={{ cursor: 'pointer' }}
+                        className="student-table-row"
+                      >
+                        <td>
+                          <div style={{ fontWeight: 600, color: "#f1f3f9" }}>{student.name}</div>
+                          <div style={{ color: "#8892b0", fontSize: "0.75rem", marginTop: "2px" }}>Кликните для просмотра истории</div>
+                        </td>
                         <td>
                           {att
                             ? <span style={{ color: "#8892b0" }}>{att.companies?.name || "—"}</span>
@@ -450,7 +503,7 @@ const Attendance = () => {
                           {att && att.lat && att.lng ? (
                             <button
                               className="att-map-btn"
-                              onClick={() => openMaps(att.lat, att.lng, att.companies.latitude, att.companies.longitude)}
+                              onClick={(e) => { e.stopPropagation(); openMaps(att.lat, att.lng, att.companies.latitude, att.companies.longitude); }}
                             >
                               📍 Карта
                             </button>
@@ -470,9 +523,17 @@ const Attendance = () => {
               {students.map((student) => {
                 const att = getAttendanceForStudent(student.id);
                 return (
-                  <div key={student.id} className="att-card">
+                  <div 
+                    key={student.id} 
+                    className="att-card" 
+                    onClick={() => openStudentHistoryModal(student)} 
+                    style={{ cursor: 'pointer' }}
+                  >
                     <div className="att-card-header">
-                      <span className="att-card-name">{student.name}</span>
+                      <div>
+                        <span className="att-card-name">{student.name}</span>
+                        <div style={{ color: "#8892b0", fontSize: "0.75rem", marginTop: "2px", fontWeight: "normal" }}>Кликните для просмотра истории</div>
+                      </div>
                       {getStatusBadge(att)}
                     </div>
                     <div className="att-card-row">
@@ -492,7 +553,7 @@ const Attendance = () => {
                         <button
                           className="att-map-btn"
                           style={{ width: "100%", justifyContent: "center" }}
-                          onClick={() => openMaps(att.lat, att.lng, att.companies.latitude, att.companies.longitude)}
+                          onClick={(e) => { e.stopPropagation(); openMaps(att.lat, att.lng, att.companies.latitude, att.companies.longitude); }}
                         >
                           📍 Открыть на карте
                         </button>
@@ -505,6 +566,69 @@ const Attendance = () => {
           </>
         )}
       </div>
+
+      {/* Модальное окно истории */}
+      {selectedStudent && (
+        <div className="modal-overlay" onClick={() => setSelectedStudent(null)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <h2 style={{ margin: 0, fontSize: "1.25rem", color: "#f1f3f9" }}>История посещаемости (За всё время)</h2>
+                <div style={{ color: "#4f6ef7", marginTop: "4px", fontWeight: 600 }}>{selectedStudent.name}</div>
+              </div>
+              <button 
+                onClick={() => setSelectedStudent(null)}
+                style={{
+                  background: "transparent", border: "none", color: "#8892b0",
+                  fontSize: "1.5rem", cursor: "pointer", padding: 0
+                }}
+              >
+                &times;
+              </button>
+            </div>
+
+            <div className="modal-body">
+              {historyLoading ? (
+                <div style={{ textAlign: "center", padding: "2rem", color: "#8892b0" }}>Загрузка истории...</div>
+              ) : studentHistory.length === 0 ? (
+                <div style={{ padding: "2rem", textAlign: "center", color: "#8892b0", background: "#111318", borderRadius: "10px", border: "1px dashed #2a2f45" }}>
+                  Нет записей о посещаемости для этого студента.
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column" }}>
+                  {studentHistory.map(record => (
+                    <div key={record.id} className="history-item">
+                      <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                        <span style={{ fontWeight: 600, color: "#f1f3f9" }}>
+                          {new Date(record.scanned_at).toLocaleDateString('ru-RU')}
+                        </span>
+                        <span style={{ fontSize: "0.85rem", color: "#8892b0" }}>
+                          Время: {formatTime(record)}
+                        </span>
+                        <span style={{ fontSize: "0.85rem", color: "#8892b0" }}>
+                          Предприятие: {record.companies?.name || "—"}
+                        </span>
+                      </div>
+                      <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
+                        {getStatusBadge(record)}
+                        {record.lat && record.lng && (
+                          <button
+                            className="att-map-btn"
+                            onClick={() => openMaps(record.lat, record.lng, record.companies.latitude, record.companies.longitude)}
+                            style={{ padding: "4px 8px", fontSize: "0.75rem" }}
+                          >
+                            📍 Карта
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
