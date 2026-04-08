@@ -12,6 +12,7 @@ const AdminPanel = () => {
   const [companies, setCompanies] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [assignments, setAssignments] = useState([]);
+  const [practices, setPractices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [msg, setMsg] = useState({ text: '', type: '' });
 
@@ -21,11 +22,13 @@ const AdminPanel = () => {
   const [companyForm, setCompanyForm] = useState({ name: '', address: '', latitude: '', longitude: '', allowed_radius: '200' });
   const [accountForm, setAccountForm] = useState({ login: '', password: '', role: 'teacher', company_id: '', student_id: '' });
   const [assignForm, setAssignForm] = useState({ student_id: '', company_id: '' });
+  const [practiceForm, setPracticeForm] = useState({ name: '', start_date: '', end_date: '' });
 
   // === EDIT MODE ===
   const [editingGroup, setEditingGroup] = useState(null);
   const [editingStudent, setEditingStudent] = useState(null);
   const [editingCompany, setEditingCompany] = useState(null);
+  const [editingPractice, setEditingPractice] = useState(null);
 
   useEffect(() => {
     fetchAll();
@@ -49,6 +52,13 @@ const AdminPanel = () => {
       .from('student_assignments')
       .select('*, students(name), companies(name)');
     setAssignments(assignData || []);
+
+    // Загружаем предметы практики
+    const { data: practData } = await supabase
+      .from('practices')
+      .select('*')
+      .order('start_date', { ascending: false });
+    setPractices(practData || []);
 
     setLoading(false);
   };
@@ -246,6 +256,42 @@ const AdminPanel = () => {
     fetchAll();
   };
 
+  // ===================== PRACTICES =====================
+  const handleCreatePractice = async (e) => {
+    e.preventDefault();
+    if (!practiceForm.name.trim() || !practiceForm.start_date || !practiceForm.end_date) return;
+    const { error } = await supabase.from('practices').insert([{
+      name: practiceForm.name.trim(),
+      start_date: practiceForm.start_date,
+      end_date: practiceForm.end_date
+    }]);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Практика создана!');
+    setPracticeForm({ name: '', start_date: '', end_date: '' });
+    fetchAll();
+  };
+
+  const handleUpdatePractice = async (id) => {
+    const upd = {
+      name: editingPractice.name,
+      start_date: editingPractice.start_date,
+      end_date: editingPractice.end_date
+    };
+    const { error } = await supabase.from('practices').update(upd).eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Практика обновлена!');
+    setEditingPractice(null);
+    fetchAll();
+  };
+
+  const handleDeletePractice = async (id) => {
+    if (!confirm('Удалить практику? Связанные записи посещаемости потеряют привязку.')) return;
+    const { error } = await supabase.from('practices').delete().eq('id', id);
+    if (error) { showMsg('Ошибка: ' + error.message, 'error'); return; }
+    showMsg('Практика удалена');
+    fetchAll();
+  };
+
   // ===================== STYLES =====================
   const inputStyle = {
     background: '#111318', border: '1px solid #1e2130', borderRadius: '10px',
@@ -289,6 +335,7 @@ const AdminPanel = () => {
     { id: 'students', icon: '🎓', label: 'Студенты' },
     { id: 'companies', icon: '🏢', label: 'Предприятия' },
     { id: 'assignments', icon: '🔗', label: 'Связки' },
+    { id: 'practices', icon: '📚', label: 'Практики' },
     { id: 'accounts', icon: '👤', label: 'Аккаунты' },
   ];
 
@@ -624,6 +671,91 @@ const AdminPanel = () => {
                       <button onClick={() => handleDeleteAssignment(a.id)} style={btnDanger}>🗑️</button>
                     </div>
                   ))}
+                </div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ==================== ПРАКТИКИ ==================== */}
+        {activeTab === 'practices' && (
+          <div>
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>➕ Добавить предмет практики</h3>
+              <form onSubmit={handleCreatePractice} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                <input placeholder="Название предмета (напр. Производственная практика)" value={practiceForm.name}
+                  onChange={e => setPracticeForm({ ...practiceForm, name: e.target.value })} style={inputStyle} />
+                <div style={{ display: 'flex', gap: '10px' }}>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#8892b0', marginBottom: '4px' }}>Дата начала</label>
+                    <input type="date" value={practiceForm.start_date}
+                      onChange={e => setPracticeForm({ ...practiceForm, start_date: e.target.value })} style={inputStyle} />
+                  </div>
+                  <div style={{ flex: 1 }}>
+                    <label style={{ display: 'block', fontSize: '0.75rem', fontWeight: 600, color: '#8892b0', marginBottom: '4px' }}>Дата окончания</label>
+                    <input type="date" value={practiceForm.end_date}
+                      onChange={e => setPracticeForm({ ...practiceForm, end_date: e.target.value })} style={inputStyle} />
+                  </div>
+                </div>
+                <button type="submit" style={btnPrimary}>Создать практику</button>
+              </form>
+            </div>
+
+            <div style={cardStyle}>
+              <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.1rem' }}>📋 Все практики ({practices.length})</h3>
+              {practices.length === 0 ? (
+                <p style={{ color: '#4a5568' }}>Практик пока нет</p>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                  {practices.map(p => {
+                    const now = new Date().toISOString().split('T')[0];
+                    const isActive = p.start_date <= now && p.end_date >= now;
+                    const isPast = p.end_date < now;
+                    return (
+                      <div key={p.id} style={{
+                        background: '#111318', padding: '16px', borderRadius: '12px',
+                        border: `1px solid ${isActive ? 'rgba(16,185,129,0.3)' : '#1e2130'}`
+                      }}>
+                        {editingPractice && editingPractice.id === p.id ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                            <input value={editingPractice.name}
+                              onChange={e => setEditingPractice({ ...editingPractice, name: e.target.value })} style={inputStyle} />
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                              <input type="date" value={editingPractice.start_date}
+                                onChange={e => setEditingPractice({ ...editingPractice, start_date: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+                              <input type="date" value={editingPractice.end_date}
+                                onChange={e => setEditingPractice({ ...editingPractice, end_date: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button onClick={() => handleUpdatePractice(p.id)} style={btnSave}>💾 Сохранить</button>
+                              <button onClick={() => setEditingPractice(null)} style={btnEdit}>Отмена</button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                <span style={{ fontWeight: 700, fontSize: '1rem' }}>{p.name}</span>
+                                <span style={{
+                                  padding: '2px 8px', borderRadius: '100px', fontSize: '0.7rem', fontWeight: 600,
+                                  background: isActive ? 'rgba(16,185,129,0.1)' : isPast ? 'rgba(239,68,68,0.1)' : 'rgba(245,158,11,0.1)',
+                                  color: isActive ? '#10b981' : isPast ? '#ef4444' : '#f59e0b',
+                                  border: `1px solid ${isActive ? 'rgba(16,185,129,0.2)' : isPast ? 'rgba(239,68,68,0.2)' : 'rgba(245,158,11,0.2)'}`
+                                }}>{isActive ? 'Активна' : isPast ? 'Завершена' : 'Ожидание'}</span>
+                              </div>
+                              <div style={{ color: '#8892b0', fontSize: '0.85rem' }}>
+                                📅 {new Date(p.start_date).toLocaleDateString('ru-RU')} — {new Date(p.end_date).toLocaleDateString('ru-RU')}
+                              </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                              <button onClick={() => setEditingPractice({ ...p })} style={btnEdit}>✏️</button>
+                              <button onClick={() => handleDeletePractice(p.id)} style={btnDanger}>🗑️</button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

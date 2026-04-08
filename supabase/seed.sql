@@ -60,7 +60,16 @@ create table if not exists attendance (
   lng double precision
 );
 
--- 7. Связки студент-предприятие (кто где проходит практику)
+-- 7. Предметы практики (с датами)
+create table if not exists practices (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  start_date date not null,
+  end_date date not null,
+  created_at timestamp default now()
+);
+
+-- 8. Связки студент-предприятие (кто где проходит практику)
 create table if not exists student_assignments (
   id uuid primary key default gen_random_uuid(),
   student_id uuid references students(id) on delete cascade,

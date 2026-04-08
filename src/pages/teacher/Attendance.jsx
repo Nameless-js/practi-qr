@@ -41,7 +41,7 @@ const Attendance = () => {
 
     const { data: attData } = await supabase
       .from('attendance')
-      .select('*, companies(name, latitude, longitude)')
+      .select('*, companies(name, latitude, longitude), practices(name)')
       .gte('scanned_at', startOfDay)
       .lte('scanned_at', endOfDay)
       .order('scanned_at', { ascending: false });
@@ -132,10 +132,13 @@ const Attendance = () => {
               <thead>
                 <tr>
                   <th style={thStyle}>Студент</th>
+                  <th style={thStyle}>Предмет</th>
                   <th style={thStyle}>Предприятие</th>
-                  <th style={thStyle}>Время отметки</th>
+                  <th style={thStyle}>Приход</th>
+                  <th style={thStyle}>Уход</th>
                   <th style={thStyle}>Статус</th>
-                  <th style={thStyle}>Карта</th>
+                  <th style={thStyle}>Геолокация прихода</th>
+                  <th style={thStyle}>Геолокация ухода</th>
                 </tr>
               </thead>
               <tbody>
@@ -147,19 +150,55 @@ const Attendance = () => {
                         <div style={{ fontWeight: 600 }}>{student.name}</div>
                       </td>
                       <td style={tdStyle}>
-                        {att ? (
-                          <span style={{ color: '#8892b0' }}>{att.companies?.name || '—'}</span>
+                        {att && att.practices?.name ? (
+                          <span style={{
+                            background: 'rgba(124,58,237,0.1)', color: '#a78bfa',
+                            border: '1px solid rgba(124,58,237,0.2)',
+                            padding: '3px 8px', borderRadius: '100px',
+                            fontSize: '0.75rem', fontWeight: 600
+                          }}>{att.practices.name}</span>
                         ) : (
                           <span style={{ color: '#4a5568' }}>—</span>
                         )}
                       </td>
                       <td style={tdStyle}>
                         {att ? (
-                          <span>{new Date(att.scanned_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}</span>
+                          <span style={{ color: '#8892b0' }}>{att.companies?.name || '—'}</span>
+                        ) : (
+                          <span style={{ color: '#4a5568' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Время прихода */}
+                      <td style={tdStyle}>
+                        {att ? (
+                          <span style={{ color: '#10b981', fontWeight: 600 }}>
+                            🟢 {new Date(att.scanned_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         ) : (
                           <span style={{ color: '#4a5568' }}>Нет отметки</span>
                         )}
                       </td>
+
+                      {/* Время ухода */}
+                      <td style={tdStyle}>
+                        {att && att.check_out_at ? (
+                          <span style={{ color: '#a78bfa', fontWeight: 600 }}>
+                            🔴 {new Date(att.check_out_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        ) : att ? (
+                          <span style={{
+                            background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
+                            border: '1px solid rgba(245,158,11,0.2)',
+                            padding: '3px 8px', borderRadius: '100px',
+                            fontSize: '0.75rem', fontWeight: 600
+                          }}>⏳ На месте</span>
+                        ) : (
+                          <span style={{ color: '#4a5568' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Статус геолокации */}
                       <td style={tdStyle}>
                         {att ? (
                           att.status === 'present' ? (
@@ -186,18 +225,39 @@ const Attendance = () => {
                           }}>⏳ Ожидание</span>
                         )}
                       </td>
+
+                      {/* Карта прихода */}
                       <td style={tdStyle}>
                         {att && att.lat && att.lng ? (
                           <button
                             onClick={() => openMaps(att.lat, att.lng)}
                             style={{
-                              background: 'rgba(79,110,247,0.1)', color: '#4f6ef7',
-                              border: '1px solid rgba(79,110,247,0.2)',
+                              background: 'rgba(16,185,129,0.1)', color: '#10b981',
+                              border: '1px solid rgba(16,185,129,0.2)',
                               padding: '6px 12px', borderRadius: '8px',
                               cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem'
                             }}
                           >
-                            📍 Карта
+                            📍 Приход
+                          </button>
+                        ) : (
+                          <span style={{ color: '#4a5568', fontSize: '0.85rem' }}>—</span>
+                        )}
+                      </td>
+
+                      {/* Карта ухода */}
+                      <td style={tdStyle}>
+                        {att && att.checkout_lat && att.checkout_lng ? (
+                          <button
+                            onClick={() => openMaps(att.checkout_lat, att.checkout_lng)}
+                            style={{
+                              background: 'rgba(124,58,237,0.1)', color: '#a78bfa',
+                              border: '1px solid rgba(124,58,237,0.2)',
+                              padding: '6px 12px', borderRadius: '8px',
+                              cursor: 'pointer', fontWeight: 600, fontSize: '0.78rem'
+                            }}
+                          >
+                            📍 Уход
                           </button>
                         ) : (
                           <span style={{ color: '#4a5568', fontSize: '0.85rem' }}>—</span>

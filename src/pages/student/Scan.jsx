@@ -12,16 +12,36 @@ const Scan = () => {
   const [scanResult, setScanResult] = useState(null); // { success, message, details }
   const [scanning, setScanning] = useState(false);
   const [processing, setProcessing] = useState(false);
+  const [practices, setPractices] = useState([]);
+  const [selectedPractice, setSelectedPractice] = useState('');
+  const [practicesLoading, setPracticesLoading] = useState(true);
   const scannerRef = useRef(null);
 
   const user = (() => {
     try { return JSON.parse(localStorage.getItem('practi_user')); } catch { return null; }
   })();
 
-  // 1. Запрашиваем геолокацию при входе
+  // 1. Запрашиваем геолокацию и загружаем практики при входе
   useEffect(() => {
     requestGeolocation();
+    fetchPractices();
   }, []);
+
+  const fetchPractices = async () => {
+    setPracticesLoading(true);
+    const today = new Date().toISOString().split('T')[0];
+    const { data } = await supabase
+      .from('practices')
+      .select('*')
+      .lte('start_date', today)
+      .gte('end_date', today)
+      .order('name');
+    setPractices(data || []);
+    if (data && data.length === 1) {
+      setSelectedPractice(data[0].id);
+    }
+    setPracticesLoading(false);
+  };
 
   const requestGeolocation = () => {
     setGeoLoading(true);
@@ -102,7 +122,7 @@ const Scan = () => {
     setScanning(false);
   };
 
-  // 3. Обработка check-in: проверяем QR-токен + сравниваем координаты
+  // 3. Обработка сканирования: check-in при первом сканировании, check-out при повторном
   const handleCheckIn = async (qrToken) => {
     setProcessing(true);
 
@@ -136,11 +156,57 @@ const Scan = () => {
       }
 
       const company = qrData.companies;
+
+      // c) Проверяем, есть ли уже запись прихода за сегодня
+      const today = new Date().toISOString().split('T')[0];
+      const startOfDay = today + 'T00:00:00';
+      const endOfDay = today + 'T23:59:59';
+
+      const { data: existingAtt } = await supabase
+        .from('attendance')
+        .select('*')
+        .eq('student_id', user.student_id)
+        .gte('scanned_at', startOfDay)
+        .lte('scanned_at', endOfDay)
+        .is('check_out_at', null)
+        .maybeSingle();
+
+      // d) Если запись прихода есть — записываем время ухода (check-out)
+      if (existingAtt) {
+        const { error: updateErr } = await supabase
+          .from('attendance')
+          .update({
+            check_out_at: new Date().toISOString(),
+            checkout_lat: location?.lat || null,
+            checkout_lng: location?.lng || null
+          })
+          .eq('id', existingAtt.id);
+
+        if (updateErr) {
+          setScanResult({
+            success: false,
+            message: 'Ошибка записи ухода',
+            details: updateErr.message
+          });
+        } else {
+          const checkInTime = new Date(existingAtt.scanned_at).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+          const checkOutTime = new Date().toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+          setScanResult({
+            success: true,
+            isCheckOut: true,
+            message: 'Уход зафиксирован! 👋',
+            details: `Предприятие: ${company.name} | Приход: ${checkInTime} | Уход: ${checkOutTime}`
+          });
+        }
+        setProcessing(false);
+        return;
+      }
+
+      // e) Иначе — первое сканирование: записываем приход (check-in)
       let status = 'present';
       let reason = null;
       let distance = null;
 
-      // c) Сравниваем координаты если есть эталонные GPS предприятия
       if (company.latitude && company.longitude && location) {
         distance = getDistance(
           location.lat, location.lng,
@@ -154,10 +220,10 @@ const Scan = () => {
         }
       }
 
-      // d) Записываем посещение
       const { error: insertErr } = await supabase.from('attendance').insert([{
         student_id: user.student_id,
         company_id: company.id,
+        practice_id: selectedPractice || null,
         status: status,
         reason: reason,
         lat: location?.lat || null,
@@ -173,7 +239,8 @@ const Scan = () => {
       } else {
         setScanResult({
           success: status === 'present',
-          message: status === 'present' ? 'Успешно отмечено!' : 'Отметка записана, но геолокация не совпадает',
+          isCheckOut: false,
+          message: status === 'present' ? '✅ Приход отмечен!' : 'Отметка записана, но геолокация не совпадает',
           details: status === 'present'
             ? `Предприятие: ${company.name}${distance !== null ? ` | Расстояние: ${Math.round(distance)}м` : ''}`
             : reason
@@ -266,6 +333,65 @@ const Scan = () => {
           )}
         </div>
 
+        {/* Выбор предмета практики */}
+        <div style={{
+          background: '#16181f', border: '1px solid #1e2130', borderRadius: '16px',
+          padding: '1.25rem', marginBottom: '1.5rem'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '8px' }}>
+            <span style={{ fontSize: '1.2rem' }}>📚</span>
+            <span style={{ fontWeight: 600, fontSize: '0.95rem' }}>Предмет практики</span>
+          </div>
+
+          {practicesLoading ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', color: '#f59e0b' }}>
+              <div style={{
+                width: '16px', height: '16px', border: '2px solid #1e2130',
+                borderTopColor: '#f59e0b', borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite'
+              }} />
+              Загрузка практик...
+            </div>
+          ) : practices.length === 0 ? (
+            <div style={{
+              background: 'rgba(245,158,11,0.1)', color: '#f59e0b',
+              border: '1px solid rgba(245,158,11,0.2)', padding: '10px 14px',
+              borderRadius: '10px', fontSize: '0.85rem'
+            }}>
+              ⚠️ Нет активных практик на сегодня. Обратитесь к администратору.
+            </div>
+          ) : (
+            <div>
+              <select
+                value={selectedPractice}
+                onChange={e => setSelectedPractice(e.target.value)}
+                style={{
+                  width: '100%', background: '#111318', border: '1px solid #1e2130',
+                  borderRadius: '10px', padding: '10px 14px', color: '#f1f3f9',
+                  fontSize: '0.9rem', outline: 'none', fontFamily: 'inherit',
+                  cursor: 'pointer'
+                }}
+              >
+                <option value="">— Выберите предмет практики —</option>
+                {practices.map(p => (
+                  <option key={p.id} value={p.id}>
+                    {p.name} ({new Date(p.start_date).toLocaleDateString('ru-RU')} — {new Date(p.end_date).toLocaleDateString('ru-RU')})
+                  </option>
+                ))}
+              </select>
+              {selectedPractice && (
+                <div style={{
+                  background: 'rgba(16,185,129,0.1)', color: '#10b981',
+                  border: '1px solid rgba(16,185,129,0.2)', padding: '8px 12px',
+                  borderRadius: '10px', fontSize: '0.82rem', marginTop: '8px'
+                }}>
+                  ✅ {practices.find(p => p.id === selectedPractice)?.name}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Сканер QR */}
         <div style={{
           background: '#16181f', border: '1px solid #1e2130', borderRadius: '16px',
@@ -288,12 +414,22 @@ const Scan = () => {
           ) : scanResult ? (
             <div>
               <div style={{
-                background: scanResult.success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
-                color: scanResult.success ? '#10b981' : '#ef4444',
-                border: `1px solid ${scanResult.success ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                background: scanResult.isCheckOut
+                  ? 'rgba(124,58,237,0.12)'
+                  : scanResult.success ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                color: scanResult.isCheckOut
+                  ? '#a78bfa'
+                  : scanResult.success ? '#10b981' : '#ef4444',
+                border: `1px solid ${
+                  scanResult.isCheckOut
+                    ? 'rgba(124,58,237,0.25)'
+                    : scanResult.success ? 'rgba(16,185,129,0.2)' : 'rgba(239,68,68,0.2)'
+                }`,
                 padding: '1.25rem', borderRadius: '12px', marginBottom: '1rem'
               }}>
-                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>{scanResult.success ? '✅' : '❌'}</div>
+                <div style={{ fontSize: '2rem', marginBottom: '8px' }}>
+                  {scanResult.isCheckOut ? '🚪' : scanResult.success ? '✅' : '❌'}
+                </div>
                 <div style={{ fontWeight: 700, fontSize: '1.1rem', marginBottom: '4px' }}>{scanResult.message}</div>
                 <div style={{ fontSize: '0.85rem', opacity: 0.8 }}>{scanResult.details}</div>
               </div>
@@ -322,18 +458,18 @@ const Scan = () => {
               </p>
               <button
                 onClick={startScanner}
-                disabled={!location}
+                disabled={!location || !selectedPractice}
                 style={{
-                  background: location ? 'linear-gradient(135deg, #4f6ef7, #7c3aed)' : '#1c1f28',
-                  color: location ? 'white' : '#4a5568',
+                  background: (location && selectedPractice) ? 'linear-gradient(135deg, #4f6ef7, #7c3aed)' : '#1c1f28',
+                  color: (location && selectedPractice) ? 'white' : '#4a5568',
                   border: 'none',
                   padding: '14px 28px',
                   borderRadius: '14px',
-                  cursor: location ? 'pointer' : 'not-allowed',
+                  cursor: (location && selectedPractice) ? 'pointer' : 'not-allowed',
                   fontWeight: 700,
                   fontSize: '1rem',
                   width: '100%',
-                  boxShadow: location ? '0 4px 20px rgba(79,110,247,0.3)' : 'none',
+                  boxShadow: (location && selectedPractice) ? '0 4px 20px rgba(79,110,247,0.3)' : 'none',
                   transition: 'all 0.2s'
                 }}
               >
@@ -342,6 +478,11 @@ const Scan = () => {
               {!location && (
                 <p style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '10px' }}>
                   ⚠️ Сначала разрешите доступ к геолокации
+                </p>
+              )}
+              {location && !selectedPractice && (
+                <p style={{ color: '#f59e0b', fontSize: '0.8rem', marginTop: '10px' }}>
+                  ⚠️ Выберите предмет практики
                 </p>
               )}
             </div>
